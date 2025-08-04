@@ -1,3 +1,6 @@
+#
+# MODIFIED MAKEFILE FOR IOS & MACOS SUPPORT
+#
 SHELL:=/usr/bin/env bash
 
 HOST:=$(shell uname -s)
@@ -7,8 +10,10 @@ FFMPEG_LIBS:=libavcodec libavdevice libavfilter libavformat libavutil libswresam
 ANDROID_ARCHS:=arm-v7a arm-v7a-neon arm64-v8a x86 x86_64
 MACOS_ARCHS:=arm64 x86_64
 LINUX_ARCHS:=x86_32 x86_64
+IOS_ARCHS:=arm64
 
 ifneq (,$(filter $(HOST), Darwin))
+	# On Apple hardware, you must now specify PLATFORM=ios or PLATFORM=macos
 	PLATFORM?=macos
 else ifneq (,$(filter $(HOST), Linux))
 	PLATFORM?=linux
@@ -16,8 +21,8 @@ else
 	PLATFORM?=android
 endif
 
-ifeq (,$(filter $(PLATFORM), android macos linux))
-$(error Invalid targeting platform: "$(PLATFORM)". Currently only support "android", "macos" and "linux".)
+ifeq (,$(filter $(PLATFORM), android macos linux ios))
+$(error Invalid targeting platform: "$(PLATFORM)". Currently only support "android", "macos", "linux" and "ios".)
 endif
 
 ifeq ($(PLATFORM), android)
@@ -34,6 +39,11 @@ else ifeq ($(PLATFORM), linux)
 	TARGET_ARCH?=x86_64
 ifeq (,$(filter $(TARGET_ARCH), $(LINUX_ARCHS)))
 $(error Invalid targeting arch: "$(TARGET_ARCH)". Currently only support $(LINUX_ARCHS) on Linux.)
+endif
+else ifeq ($(PLATFORM), ios)
+	TARGET_ARCH?=arm64
+ifeq (,$(filter $(TARGET_ARCH), $(IOS_ARCHS)))
+$(error Invalid targeting arch: "$(TARGET_ARCH)". Currently only support $(IOS_ARCHS) on iOS.)
 endif
 else ifneq (,$(filter $(UNAME), x86_64))
 	TARGET_ARCH?=x86_64
@@ -83,6 +93,9 @@ else ifeq ($(PLATFORM), macos)
 else ifeq ($(PLATFORM), linux)
 	TARGET_HOST=linux-$(TARGET_ARCH)
 	PREFIX_ARCH:=$(TARGET_ARCH)
+else ifeq ($(PLATFORM), ios)
+	TARGET_HOST=apple-ios-universal
+	PREFIX_ARCH:=$(TARGET_ARCH)
 endif
 
 FFMPEG_LIB_PKG?=ffmpeg-kit/prebuilt/$(TARGET_HOST)/ffmpeg/lib/pkgconfig
@@ -118,25 +131,34 @@ endif
 	cd ffmpeg-kit && ./android.sh $(EXTRA_PARAMS) --enable-android-media-codec --enable-android-zlib --no-archive \
 		--enable-gpl --enable-x264 --enable-x265 --enable-lame
 else ifeq ($(PLATFORM), macos)
-	cd ffmpeg-kit && ./macos.sh --target=10.12 $(EXTRA_PARAMS) --enable-gpl --enable-macos-avfoundation --no-framework \
-		--enable-gpl --enable-x264 --enable-x265 --enable-lame
+	cd ffmpeg-kit && ./macos.sh --target=10.12 $(EXTRA_PARAMS) --enable-gpl --enable-macos-avfoundation --no-framework
 else ifeq ($(PLATFORM), linux)
 	cd ffmpeg-kit && ./linux.sh --enable-gpl --enable-x264 --enable-linux-x265 --enable-linux-lame
+else ifeq ($(PLATFORM), ios)
+	cd ffmpeg-kit && ./ios.sh --no-framework --enable-gpl
 endif
 
 
 ffmpeg: $(FFMPEG_LIB_PKG)
 	rm -rf $(FFMPEG_PREFIX)
 	mkdir -p $(FFMPEG_PREFIX)/lib
-	mkdir -p $(FFMPEG_PREFIX)/include && cp -r $(FFMPEG_INC_DIR)/* $(FFMPEG_PREFIX)/include
+	mkdir -p $(FFMPEG_PREFIX)/include
+ifeq ($(PLATFORM), ios)
+	cp -r ffmpeg-kit/prebuilt/apple-ios-arm64/ffmpeg/include/* $(FFMPEG_PREFIX)/include
+else
+	cp -r $(FFMPEG_INC_DIR)/* $(FFMPEG_PREFIX)/include
+endif
 ifeq ($(TARGET_HOST), apple-macos-universal)
 	$(foreach lib,$(FFMPEG_LIBS), \
-        lipo -create -output $(FFMPEG_PREFIX)/lib/$(lib).dylib \
+		lipo -create -output $(FFMPEG_PREFIX)/lib/$(lib).dylib \
 		ffmpeg-kit/prebuilt/$(TARGET_HOST_OSX_ARM64)/ffmpeg/lib/$(lib).dylib \
 		ffmpeg-kit/prebuilt/$(TARGET_HOST_OSX_X86_64)/ffmpeg/lib/$(lib).dylib;)
 else ifeq ($(PLATFORM), macos)
 	$(foreach lib,$(FFMPEG_LIBS), \
 		cp ffmpeg-kit/prebuilt/$(TARGET_HOST)/ffmpeg/lib/$(lib).dylib $(FFMPEG_PREFIX)/lib;)
+else ifeq ($(PLATFORM), ios)
+	$(foreach lib,$(FFMPEG_LIBS), \
+		cp ffmpeg-kit/prebuilt/apple-ios-arm64/ffmpeg/lib/$(lib).dylib $(FFMPEG_PREFIX)/lib/$(lib).a;)
 else ifeq ($(TARGET_HOST), android-arm-neon)
 	$(foreach lib,$(FFMPEG_LIBS), \
 		cp ffmpeg-kit/prebuilt/$(TARGET_HOST)/ffmpeg/lib/$(lib)_neon.so $(FFMPEG_PREFIX)/lib;)
@@ -145,16 +167,31 @@ else
 		cp ffmpeg-kit/prebuilt/$(TARGET_HOST)/ffmpeg/lib/$(lib).so $(FFMPEG_PREFIX)/lib;)
 endif
 
-
+#
+# Replace the old gdextension rule with this one
+#
 gdextension: ffmpeg
 ifeq ($(PLATFORM), android)
 	cd gdextension_build && scons platform=$(PLATFORM) arch=$(PREFIX_ARCH) target=template_release ffmpeg_path=../$(FFMPEG_PREFIX)
 	cd gdextension_build && scons platform=$(PLATFORM) arch=$(PREFIX_ARCH) target=template_debug ffmpeg_path=../$(FFMPEG_PREFIX)
+else ifeq ($(PLATFORM), ios)
+	cd gdextension_build && scons platform=$(PLATFORM) arch=$(PREFIX_ARCH) target=template_release ffmpeg_path=../$(FFMPEG_PREFIX)
+	cd gdextension_build && scons platform=$(PLATFORM) arch=$(PREFIX_ARCH) target=template_debug ffmpeg_path=../$(FFMPEG_PREFIX)
+# NEW MACOS BLOCK
+else ifeq ($(PLATFORM), macos)
+	cd gdextension_build && scons platform=$(PLATFORM) target=template_release ffmpeg_path=../$(FFMPEG_PREFIX)
+	cd gdextension_build && scons platform=$(PLATFORM) target=template_debug ffmpeg_path=../$(FFMPEG_PREFIX)
+	@echo "Copying FFmpeg dynamic libraries to addons folder..."
+	mkdir -p addons/ffmpeg/macos
+	cp $(FFMPEG_PREFIX)/lib/*.dylib addons/ffmpeg/macos/
+	@echo "Copying GDExtension definition file..."
+	cp gdextension_build/build/addons/ffmpeg/ffmpeg.gdextension addons/ffmpeg/
+	@echo "Copying GDExtension framework library..."
+	cp -r gdextension_build/build/addons/ffmpeg/macos/*.framework addons/ffmpeg/macos/
 else
 	cd gdextension_build && scons platform=$(PLATFORM) target=template_release ffmpeg_path=../$(FFMPEG_PREFIX)
 	cd gdextension_build && scons platform=$(PLATFORM) target=template_debug ffmpeg_path=../$(FFMPEG_PREFIX)
 endif
-
 
 clean:
 	rm -rf thirdparty/ffmpeg

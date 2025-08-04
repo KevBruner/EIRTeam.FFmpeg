@@ -5,10 +5,33 @@ import gdextension_build.ffmpeg_download as ffmpeg_download
 
 Import("env")
 
+# This variable is passed from the Makefile
+ffmpeg_path = env["ffmpeg_path"]
+
 if env["platform"] == "linuxbsd":
     if "RPATH" not in env:
         env.Append(RPATH=env.Literal("\\$$ORIGIN"))
     env.Append(LINKFLAGS=["-Wl,--disable-new-dtags"])
+elif env["platform"] == "macos":
+    env.Append(
+        LIBPATH=[ffmpeg_path + "/lib"],
+        LIBS=[
+            "avdevice", "avfilter", "avformat", "avcodec", "swresample",
+            "swscale", "avutil"
+        ],
+    )
+elif env["platform"] == "ios":
+    env.Append(
+        LIBPATH=[ffmpeg_path + "/lib"],
+        LIBS=[
+            "avdevice", "avfilter", "avformat", "avcodec", "swresample",
+            "swscale", "avutil"
+        ],
+        FRAMEWORKS=[
+            'VideoToolbox', 'AudioToolbox', 'CoreMedia', 'CoreVideo'
+        ]
+    )
+
 
 env_ffmpeg = env.Clone()
 
@@ -17,8 +40,6 @@ module_obj = []
 excluded = []
 
 sources = [x for x in Glob("*.cpp") if str(x) not in excluded]
-
-ffmpeg_path = env["ffmpeg_path"]
 
 env_ffmpeg.Prepend(CPPPATH=f"{ffmpeg_path}/include")
 env_ffmpeg.Prepend(CPPDEFINES="ENABLE_STREAM_INFO")
@@ -34,7 +55,9 @@ else:
     # mingw
     env.Append(LIBS=ffmpeg_libs)
 
-ffmpeg_install_action = ffmpeg_download.ffmpeg_install(env_ffmpeg, "#bin", ffmpeg_path)
+# THIS IS THE FIX: Only run the ffmpeg_install function on Windows
+if env["platform"] == "windows":
+    ffmpeg_install_action = ffmpeg_download.ffmpeg_install(env_ffmpeg, "#bin", ffmpeg_path)
 
 env_ffmpeg.GLSL_HEADER("yuv_to_rgb.glsl")
 env_ffmpeg.Depends(Glob("*.glsl.gen.h"), ["#glsl_builders.py"])

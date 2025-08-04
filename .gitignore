@@ -383,3 +383,15 @@ $RECYCLE.BIN/
 *.lnk
 /ffmpeg-master-latest-linux64-lgpl-godot
 /gdextension_build/scons-cache
+addons/ffmpeg/ffmpeg.gdextension
+addons/ffmpeg/macos/libavcodec.dylib
+addons/ffmpeg/macos/libavdevice.dylib
+addons/ffmpeg/macos/libavfilter.dylib
+addons/ffmpeg/macos/libavformat.dylib
+addons/ffmpeg/macos/libavutil.dylib
+addons/ffmpeg/macos/libgdffmpeg.macos.template_debug.framework/libgdffmpeg_advanced.macos.template_debug
+addons/ffmpeg/macos/libgdffmpeg.macos.template_debug.framework/Resources/Info.plist
+addons/ffmpeg/macos/libgdffmpeg.macos.template_release.framework/libgdffmpeg_advanced.macos.template_release
+addons/ffmpeg/macos/libgdffmpeg.macos.template_release.framework/Resources/Info.plist
+addons/ffmpeg/macos/libswresample.dylib
+addons/ffmpeg/macos/libswscale.dylib
